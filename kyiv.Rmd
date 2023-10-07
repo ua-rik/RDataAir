@@ -1,0 +1,124 @@
+---
+title: "DataAir_IF"
+author: "Yaroslav Davydchuk"
+date: "2023-09-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+```
+
+## старт
+
+вантажу бібліотеки і встановлюю робочу папку
+
+```{r}
+library(tidyverse) 
+library(lubridate) 
+library(ggplot2) 
+
+getwd() #displays your working directory
+setwd("/media/uarik/S2/Rstudio_projects/DataAir/") 
+```
+
+```{r}
+jobdata <- read_csv("ECOCITY_Archive_377_40_2019-02-20_2023-09-23.csv", col_names = FALSE)
+```
+
+```{r}
+colnames(jobdata)
+
+```
+
+```{r}
+jobdata <- rename(jobdata, station_ID=X1, coordinates = X2, date = X3, time = X4, num_of_mes = X5, indicator = X6, unit = X7, value = X8)
+colnames(jobdata)
+#str(jobdata)
+```
+
+```{r}
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2))
+temp_table
+```
+
+```{r}
+jobdata <- jobdata %>%
+  mutate(value = ifelse(indicator == 'O₃' & unit == 'ppb', value / 1000, value)) %>%
+  mutate(unit = ifelse(indicator == 'O₃' & unit == 'ppb', 'ppm', unit))
+
+#побідне з тиском. 
+
+```
+
+```{r}
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2))
+temp_table
+```
+
+Шукаю аномальні значення (але дані потрібно буде видалятипізніше, в зведеній таблиці)
+
+```{r}
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+
+temp_table
+```
+далі потрібно переіменувати індикатори, адже наступним кроком буде створення зведеної таблиці, і назви колонок будуть з нижніми індексами (що заборонено в назвах змінних)
+```{r}
+jobdata <- jobdata %>%
+  mutate(indicator = ifelse(indicator == 'CO₂', 'CO2', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NH₃', 'NH3', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NO₂', 'NO2', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'O₃', 'O3', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'SO₂', 'SO2', indicator)) 
+
+
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+
+temp_table
+```
+Зведена таблиця:
+```{r}
+piw_tab <- jobdata %>% 
+  pivot_wider(
+    id_cols = c(station_ID, coordinates, date, time),
+    names_from = indicator, 
+    values_from = c(value, num_of_mes),
+    values_fn =  mean,
+    names_sep = "."
+  )
+```
+Додаю індикатори місяців, років, днів
+```{r}
+jobdata$month <- format(as.Date(jobdata$date), "%m")
+jobdata$day <- format(as.Date(jobdata$date), "%d")
+jobdata$year <- format(as.Date(jobdata$date), "%Y")
+jobdata$day_of_week <- format(as.Date(jobdata$date), "%A")
+
+piw_tab$month <- format(as.Date(piw_tab$date), "%m")
+piw_tab$day <- format(as.Date(piw_tab$date), "%d")
+piw_tab$year <- format(as.Date(piw_tab$date), "%Y")
+piw_tab$day_of_week <- format(as.Date(piw_tab$date), "%A")
+```
+#Очистка даних
+```{r}
+bounds <- piw_tab %>%
+  summarise(Q1 = quantile(value.Temperature, 0.25, na.rm = TRUE),
+            Q3 = quantile(value.Temperature, 0.75, na.rm = TRUE)) %>%
+  mutate(IQR = Q3 - Q1,
+         lower_bound = Q1 - 1.5*IQR,
+         upper_bound = Q3 + 1.5*IQR)
+
+ggplot(piw_tab, aes(x = value.Temperature)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+```

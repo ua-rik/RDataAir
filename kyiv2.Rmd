@@ -1,0 +1,277 @@
+
+# %% [code] {"jupyter":{"outputs_hidden":false},"execution":{"iopub.status.busy":"2023-10-07T11:45:30.569427Z","iopub.execute_input":"2023-10-07T11:45:30.571200Z","iopub.status.idle":"2023-10-07T11:45:39.758828Z"}}
+```{r}
+
+library(tidyverse) 
+library(lubridate) 
+library(ggplot2)  
+
+getwd() #displays your working directory
+setwd("/media/uarik/S2/Rstudio_projects/DataAir/") 
+
+jobdata <- read_csv("ECOCITY_Archive_377_40_2019-02-20_2023-09-23.csv", col_names = FALSE)
+
+colnames(jobdata)
+```
+
+```{r}
+# 
+
+```
+
+```{r}
+jobdata <- rename(jobdata, station_ID=X1, coordinates = X2, date = X3, time = X4, num_of_mes = X5, indicator = X6, unit = X7, value = X8)
+colnames(jobdata)
+
+```
+
+```{r}
+
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+temp_table
+
+
+
+```
+
+```{r}
+#видно два глюки: o3 мірявся в ppm та ppb. більшість замірів в ppm, тому все в це й переводимо
+jobdata <- jobdata %>%
+  mutate(value = ifelse(indicator == 'O₃' & unit == 'ppb', value/1000, value)) %>%
+  mutate(unit = ifelse(indicator == 'O₃' & unit == 'ppb', 'ppm', unit))
+
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+
+temp_table
+```
+
+```{r}
+
+#rename indicators
+jobdata <- jobdata %>%
+  mutate(indicator = ifelse(indicator == 'CO₂', 'CO2', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NH₃', 'NH3', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NO₂', 'NO2', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'O₃', 'O3', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'SO₂', 'SO2', indicator)) 
+
+
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+
+temp_table
+
+```
+
+```{r}
+#piwot table
+
+piw_tab <- jobdata %>% 
+  pivot_wider(
+    id_cols = c(station_ID, coordinates, date, time),
+    names_from = indicator, 
+    values_from = c(value, num_of_mes),
+    values_fn =  mean,
+    names_sep = "."
+  )
+piw_tab
+```
+
+```{r}
+#jobdata$date <- as.Date(jobdata$started_at) #The default format is yyyy-mm-dd
+jobdata$month <- format(as.Date(jobdata$date), "%m")
+jobdata$day <- format(as.Date(jobdata$date), "%d")
+jobdata$year <- format(as.Date(jobdata$date), "%Y")
+jobdata$day_of_week <- format(as.Date(jobdata$date), "%A")
+
+piw_tab$month <- format(as.Date(piw_tab$date), "%m")
+piw_tab$day <- format(as.Date(piw_tab$date), "%d")
+piw_tab$year <- format(as.Date(piw_tab$date), "%Y")
+piw_tab$day_of_week <- format(as.Date(piw_tab$date), "%A")
+
+```
+
+```{r}
+#додаємо строку - рахівник помилок
+piw_tab$error <- 0
+piw_tab$sensor_location <- "outside"
+
+```
+
+```{r}
+bounds <- piw_tab %>%
+  summarise(Q1 = quantile(value.Temperature, 0.25, na.rm = TRUE),
+            Q3 = quantile(value.Temperature, 0.75, na.rm = TRUE)) %>%
+  mutate(IQR = Q3 - Q1,
+         lower_bound = Q1 - 1.5*IQR,
+         upper_bound = Q3 + 1.5*IQR)
+
+ggplot(piw_tab, aes(x = value.Temperature)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+
+bounds
+
+```
+
+```{r}
+# тут відсікаємо непотрібні квартилі і екстремальні дані. 
+# Однозначно, що максимальні значення - 400 та -150 - помилкові. разом з тим, за період 2019 - 2023 років максимальні і мінімальні значення температур в Києві зафіксовані на рівні 
+# -17 -- 10  січень 2022
+# -10 -- 12  січень 2023
+
+
+#  mutate(value = ifelse(value.TemperatureTe <  bounds$lower_bound | value.TemperatureTe >  bounds$upper_bound)) 
+
+
+temp_tab <- piw_tab %>%
+filter(value.Temperature <  bounds$lower_bound | value.Temperature >  bounds$upper_bound) %>%
+summarize(n = n())
+
+temp_tab
+
+```
+
+```{r}
+piw_tab <- piw_tab %>%
+  mutate(error = ifelse(value.Temperature <  bounds$lower_bound | value.Temperature >  bounds$upper_bound, error + 1, error)) 
+
+
+# %% [code]
+piw_tab %>%
+filter(error == 0) %>%
+ggplot(aes(x = value.Temperature)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+
+```
+
+```{r}
+#temp_table <- piw_tab %>%
+#   filter(error == 0) %>%
+#   filter(month == "01" & value.Temperature >= 16) %>%
+#  group_by(station_ID) %>%
+# summarize(n = n())
+#temp_table
+```
+
+```{r}
+piw_tab %>%
+    filter(error == 0) %>% 
+    ggplot(aes(x = date,y = value.Temperature)) +
+        geom_point(aes(color = value.Temperature))
+
+
+#   filter(station_ID %in% temp_table$station_ID) %>%
+
+
+
+# %% [code]
+```
+```{r}
+bounds <- piw_tab %>%
+  summarise(Q1 = quantile(value.PM2.5, 0.25, na.rm = TRUE),
+            Q3 = quantile(value.PM2.5, 0.75, na.rm = TRUE)) %>%
+  mutate(IQR = Q3 - Q1,
+         lower_bound = Q1 - 1.5*IQR,
+         upper_bound = Q3 + 1.5*IQR)
+
+ggplot(piw_tab, aes(x = value.PM2.5)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+
+bounds
+```
+
+```{r}
+
+temp_tab <- piw_tab %>%
+filter(value.PM2.5 <  bounds$lower_bound | value.PM2.5 >  bounds$upper_bound) %>%
+summarize(n = n())
+
+temp_tab
+```
+
+```{r}
+piw_tab <- piw_tab %>%
+  mutate(error = ifelse(value.PM2.5 <  bounds$lower_bound | value.PM2.5 >  bounds$upper_bound, error + 1, error)) 
+
+
+# %% [code]
+piw_tab %>%
+filter(error == 0) %>%
+ggplot(aes(x = value.PM2.5)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+
+```
+```{r}
+for (val in temp_table$indicator) {
+  # Отримання назви колонки
+  column_name <- paste0("value.", val)
+  
+  bounds <- piw_tab %>%
+    summarise(Q1 = quantile(piw_tab[[column_name]], 0.25, na.rm = TRUE),
+              Q3 = quantile(piw_tab[[column_name]], 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+           lower_bound = Q1 - 1.5*IQR,
+           upper_bound = Q3 + 1.5*IQR)
+  
+  plott <- ggplot(piw_tab, aes(x = piw_tab[[column_name]])) + 
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = val, y = column_name)
+  
+  print(plott)
+  
+} 
+```
+
+
+```{r}
+winter_data <- piw_tab %>%
+  filter(month %in% c("12", "01", "02"))
+
+
+avg_temp_by_sensor <- winter_data %>%
+  group_by(station_ID) %>%
+  summarise(avg_temp = round(mean(value.Temperature), 2),  min_temp =  round(min(value.Temperature), 2), max_temp =  round(max(value.Temperature), 2))
+
+print(avg_temp_by_sensor)
+```
+
+
+```{r}
+
+piw_tab %>%
+    filter(station_ID == 1325) %>% 
+    ggplot(aes(x = date,y = value.Temperature)) +
+        geom_point(aes(color = value.Temperature))
+
+```
+
+
+```{r}
+summer_data <- piw_tab %>%
+  filter(month %in% c("06", "07", "08"))
+
+ggplot(summer_data, aes(x = value.Temperature)) + 
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+#    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+#    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = "Temp")
+```
+
+# do not share or commit these credentials where others can access them
+RSCLOUD_CLIENT_ID="F617586ECB2E94E496B0A4ADEB5ABBD413062CEC831B3EA3"
+RSCLOUD_CLIENT_SECRET="r8/nA73osxuAu8pULNLXv7mZq6rOehp3GichV7CN"
