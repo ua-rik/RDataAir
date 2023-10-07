@@ -86,9 +86,9 @@ piw_tab <- jobdata %>%
   )
 print(piw_tab)
 ```
-
+Для зручності аналізу додаю колонки з місяцями, днями, роками, днями тижня в основний датасет і в зведену таблицю
 ```{r}
-#jobdata$date <- as.Date(jobdata$started_at) #The default format is yyyy-mm-dd
+
 jobdata$month <- format(as.Date(jobdata$date), "%m")
 jobdata$day <- format(as.Date(jobdata$date), "%d")
 jobdata$year <- format(as.Date(jobdata$date), "%Y")
@@ -100,14 +100,16 @@ piw_tab$year <- format(as.Date(piw_tab$date), "%Y")
 piw_tab$day_of_week <- format(as.Date(piw_tab$date), "%A")
 
 ```
-
+Створюємо ще два ключі. рахівник помилок і розміщення станції спостереження (в приміщенні чи назовні)
 ```{r}
-#додаємо строку - рахівник помилок
-piw_tab$error <- 0
-piw_tab$sensor_location <- "outside"
+
+piw_tab$error <- 0L
+piw_tab$station_location <- "outside"
 
 ```
-
+Відсікаю екстремальні дані. для цього використаю статистичний метод - Міжквартильний розмах. 
+Метод базується на розподілі даних на квартилі. "Викидами" вважаються дані, які знаходяться за межами 1,5*IQR від першого або третього квартилю.
+Проілюструю на прикладі температури:
 ```{r}
 bounds <- piw_tab %>%
   summarise(Q1 = quantile(value.Temperature, 0.25, na.rm = TRUE),
@@ -121,117 +123,27 @@ ggplot(piw_tab, aes(x = value.Temperature)) +
   geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
   geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
 
-bounds
+#bounds
 
 ```
+Червоними пунктирними лініями відмічені границі даних, які виріжуться з аналізу. В даному випадку це все, що нижче -21 градуса і вище 46. 
+Щоб не аналізувати кожен показник вручну - запускаю цикл, який пройде по всіх показниках, і побудує візуальні схеми "випидаючих" значень
 
-```{r}
-# тут відсікаємо непотрібні квартилі і екстремальні дані. 
-# Однозначно, що максимальні значення - 400 та -150 - помилкові. разом з тим, за період 2019 - 2023 років максимальні і мінімальні значення температур в Києві зафіксовані на рівні 
-# -17 -- 10  січень 2022
-# -10 -- 12  січень 2023
-
-
-#  mutate(value = ifelse(value.TemperatureTe <  bounds$lower_bound | value.TemperatureTe >  bounds$upper_bound)) 
-
-
-temp_tab <- piw_tab %>%
-filter(value.Temperature <  bounds$lower_bound | value.Temperature >  bounds$upper_bound) %>%
-summarize(n = n())
-
-temp_tab
-
-```
-
-```{r}
-piw_tab <- piw_tab %>%
-  mutate(error = ifelse(value.Temperature <  bounds$lower_bound | value.Temperature >  bounds$upper_bound, error + 1, error)) 
-
-
-# %% [code]
-piw_tab %>%
-filter(error == 0) %>%
-ggplot(aes(x = value.Temperature)) + 
-  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
-
-```
-
-```{r}
-#temp_table <- piw_tab %>%
-#   filter(error == 0) %>%
-#   filter(month == "01" & value.Temperature >= 16) %>%
-#  group_by(station_ID) %>%
-# summarize(n = n())
-#temp_table
-```
-
-```{r}
-piw_tab %>%
-    filter(error == 0) %>% 
-    ggplot(aes(x = date,y = value.Temperature)) +
-        geom_point(aes(color = value.Temperature))
-
-
-#   filter(station_ID %in% temp_table$station_ID) %>%
-
-
-
-# %% [code]
-```
-```{r}
-bounds <- piw_tab %>%
-  summarise(Q1 = quantile(value.PM2.5, 0.25, na.rm = TRUE),
-            Q3 = quantile(value.PM2.5, 0.75, na.rm = TRUE)) %>%
-  mutate(IQR = Q3 - Q1,
-         lower_bound = Q1 - 1.5*IQR,
-         upper_bound = Q3 + 1.5*IQR)
-
-ggplot(piw_tab, aes(x = value.PM2.5)) + 
-  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
-
-bounds
-```
-
-```{r}
-
-temp_tab <- piw_tab %>%
-filter(value.PM2.5 <  bounds$lower_bound | value.PM2.5 >  bounds$upper_bound) %>%
-summarize(n = n())
-
-temp_tab
-```
-
-```{r}
-piw_tab <- piw_tab %>%
-  mutate(error = ifelse(value.PM2.5 <  bounds$lower_bound | value.PM2.5 >  bounds$upper_bound, error + 1, error)) 
-
-
-# %% [code]
-piw_tab %>%
-filter(error == 0) %>%
-ggplot(aes(x = value.PM2.5)) + 
-  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
-
-```
 ```{r}
 for (val in temp_table$indicator) {
   # Отримання назви колонки
   column_name <- paste0("value.", val)
   
   bounds <- piw_tab %>%
-    summarise(Q1 = quantile(piw_tab[[column_name]], 0.25, na.rm = TRUE),
-              Q3 = quantile(piw_tab[[column_name]], 0.75, na.rm = TRUE)) %>%
+    summarise(Q1 = quantile(.data[[column_name]], 0.25, na.rm = TRUE),
+              Q3 = quantile(.data[[column_name]], 0.75, na.rm = TRUE)) %>%
     mutate(IQR = Q3 - Q1,
            lower_bound = Q1 - 1.5*IQR,
            upper_bound = Q3 + 1.5*IQR)
   
-  plott <- ggplot(piw_tab, aes(x = piw_tab[[column_name]])) + 
+  plott <- piw_tab %>%
+    filter(!is.na(.data[[column_name]])) %>%
+    ggplot(aes(x = .data[[column_name]])) + 
     geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
     geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
     geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
@@ -239,41 +151,85 @@ for (val in temp_table$indicator) {
   
   print(plott)
   
-} 
+}
 ```
-
-
-```{r}
-winter_data <- piw_tab %>%
-  filter(month %in% c("12", "01", "02"))
-
-
-avg_temp_by_sensor <- winter_data %>%
-  group_by(station_ID) %>%
-  summarise(avg_temp = round(mean(value.Temperature), 2),  min_temp =  round(min(value.Temperature), 2), max_temp =  round(max(value.Temperature), 2))
-
-print(avg_temp_by_sensor)
-```
-
+Варто звернути увагу на показник Озону - тут досить щільний рівномірний розподіл, тому викидів тут не буде (майже, ще потрібно видалити від'ємні дані). В подальшому циклі, який позначатиме дефектні дані - Озон виключаю
 
 ```{r}
 
-piw_tab %>%
-    filter(station_ID == 1325) %>% 
-    ggplot(aes(x = date,y = value.Temperature)) +
-        geom_point(aes(color = value.Temperature))
-
-```
-
-
-```{r}
-summer_data <- piw_tab %>%
-  filter(month %in% c("06", "07", "08"))
-
-ggplot(summer_data, aes(x = value.Temperature)) + 
+for (val in temp_table$indicator) {
+  # Отримання назви колонки
+  column_name <- paste0("value.", val)
+  
+  #визначення границь відсікання даних
+  bounds <- piw_tab %>%
+    summarise(Q1 = quantile(.data[[column_name]], 0.25, na.rm = TRUE),
+              Q3 = quantile(.data[[column_name]], 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+           lower_bound = Q1 - 1.5*IQR,
+           upper_bound = Q3 + 1.5*IQR)
+  
+  #мутація даних
+piw_tab <- piw_tab %>%
+    mutate(
+      error = ifelse(
+        (val != "O3" & ( .data[[column_name]] <  bounds$lower_bound | .data[[column_name]] >  bounds$upper_bound)) | 
+        (val != "Temperature" & .data[[column_name]]) <  0,
+        1L, 
+        0L  # Це явно вказує, що якщо умова не виконується, то потрібно повернути поточне значення 'error'
+      )
+    )
+  
+  #виведення нових графіків
+  plott <- piw_tab %>%
+    filter(!is.na(.data[[column_name]])) %>%
+    filter(error == 0) %>%
+    ggplot(aes(x = .data[[column_name]])) + 
     geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-#    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-#    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
-    labs(title = "Temp")
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = val)
+  
+  print(plott)
+  
+}
+
+
 ```
+Тепер розподіл красивий. глянемо нові загальні дані. і порівняємо з даними до очистки
+```{r}
+
+temp_table <- jobdata %>%
+  group_by(indicator, unit) %>%
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+print(temp_table)
+
+temp_table <- piw_tab %>% 
+  summarise(across(starts_with("value."), list(mean = mean, mode = function(x) {uniqx = unique(x); uniqx[which.max(tabulate(match(x, uniqx)))]}, max = max, min = min, sd = sd), .names = "{.col}_{.fn}"))
+
+print(temp_table)
+```
+
+```{r}
+stats_df <- piw_tab %>% 
+  summarise(across(starts_with("value."), 
+                   list(mean = mean, 
+                        mode = function(x) {uniqx = unique(x); uniqx[which.max(tabulate(match(x, uniqx)))]}, 
+                        max = max, 
+                        min = min, 
+                        sd = sd), 
+                   .names = "{.col}_{.fn}"))
+
+# Перетворити дані до "довгого" формату
+stats_long <- stats_df %>% 
+  pivot_longer(cols = everything(),
+               names_to = c("variable", "statistic"),
+               names_pattern = "(.+)_(.+)",
+               values_to = "value")
+
+stats_long
+
+```
+
+
 
