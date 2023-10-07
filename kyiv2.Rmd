@@ -1,5 +1,6 @@
+#Підготовка
+Завантажую портрібні бібліотеки, налаштовую робочу папку, завнтажую датасет
 
-# %% [code] {"jupyter":{"outputs_hidden":false},"execution":{"iopub.status.busy":"2023-10-07T11:45:30.569427Z","iopub.execute_input":"2023-10-07T11:45:30.571200Z","iopub.status.idle":"2023-10-07T11:45:39.758828Z"}}
 ```{r}
 
 library(tidyverse) 
@@ -14,17 +15,13 @@ jobdata <- read_csv("ECOCITY_Archive_377_40_2019-02-20_2023-09-23.csv", col_name
 colnames(jobdata)
 ```
 
-```{r}
-# 
-
-```
-
+Назви колонок Х1, Х2, ... мене не влаштовують, переіменовую
 ```{r}
 jobdata <- rename(jobdata, station_ID=X1, coordinates = X2, date = X3, time = X4, num_of_mes = X5, indicator = X6, unit = X7, value = X8)
 colnames(jobdata)
 
 ```
-
+Попередній аналіз показників:
 ```{r}
 
 temp_table <- jobdata %>%
@@ -35,9 +32,12 @@ temp_table
 
 
 ```
-
+Видно низку проблем, з якими доведеться розібратись. 
+Перше, це позник озону (O₃) наявний в двох одиницях виміру, ppb та ppm. Приводимо все до ppm. 
+ppm/ppb - parts per million/billion
+ppm = 1000 * ppb
 ```{r}
-#видно два глюки: o3 мірявся в ppm та ppb. більшість замірів в ppm, тому все в це й переводимо
+
 jobdata <- jobdata %>%
   mutate(value = ifelse(indicator == 'O₃' & unit == 'ppb', value/1000, value)) %>%
   mutate(unit = ifelse(indicator == 'O₃' & unit == 'ppb', 'ppm', unit))
@@ -48,10 +48,15 @@ temp_table <- jobdata %>%
 
 temp_table
 ```
+Озон тепер в ppm. 
+Наступна проблема - занадто великий діапазон показників. Очевидно, що температура повітря не могла бути в межах від мінус 189 до 420.
 
+в даному дослідженні буду видаляти з аналізу всі показник станцій, якщо хоча б один показник виявиться в аномальній зоні.
+
+Для цього формую зведену таблицю. Показники тепер будуть в колонках 
 ```{r}
 
-#rename indicators
+#спочатку потрібно переіменувати індикатори
 jobdata <- jobdata %>%
   mutate(indicator = ifelse(indicator == 'CO₂', 'CO2', indicator)) %>%
   mutate(indicator = ifelse(indicator == 'NH₃', 'NH3', indicator)) %>%
@@ -67,7 +72,7 @@ temp_table <- jobdata %>%
 temp_table
 
 ```
-
+Тепер все виглядає готовим до зведеної
 ```{r}
 #piwot table
 
@@ -79,7 +84,7 @@ piw_tab <- jobdata %>%
     values_fn =  mean,
     names_sep = "."
   )
-piw_tab
+print(piw_tab)
 ```
 
 ```{r}
@@ -272,6 +277,3 @@ ggplot(summer_data, aes(x = value.Temperature)) +
     labs(title = "Temp")
 ```
 
-# do not share or commit these credentials where others can access them
-RSCLOUD_CLIENT_ID="F617586ECB2E94E496B0A4ADEB5ABBD413062CEC831B3EA3"
-RSCLOUD_CLIENT_SECRET="r8/nA73osxuAu8pULNLXv7mZq6rOehp3GichV7CN"
