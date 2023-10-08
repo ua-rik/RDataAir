@@ -271,7 +271,7 @@ print(unique(jobdata$indicator))
 
 ```{r}
 #Спочатку чищу пам'ять
-rm(bounds, plott)
+rm(bounds, plott, temp_table, temp_table2)
 gc()
 
 #piwot table
@@ -285,7 +285,7 @@ piw_tab <- jobdata %>%
   ) %>%
   pivot_wider(
     names_from = indicator,
-    values_from = max_value,
+    values_from = mean_value,
     names_prefix = "indicator_"
   ) %>%
   ungroup()
