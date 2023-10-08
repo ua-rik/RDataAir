@@ -14,7 +14,6 @@ suppressPackageStartupMessages(library(tidyverse))
 library(lubridate) 
 library(ggplot2)  
 
-
 setwd("/home/uarik/Documents/RProjects/DataAir") 
 getwd() #displays your working directory
 
@@ -245,10 +244,6 @@ print(temp_table2)
 переіменування індикаторів
 
 ```{r}
-
-
-
-
 # потрібно переіменувати індикатори
 jobdata <- jobdata %>%
   mutate(indicator = ifelse(indicator == 'CO₂', 'CO2', indicator)) %>%
@@ -263,8 +258,6 @@ jobdata <- jobdata %>%
 
 
 print(unique(jobdata$indicator))
-
-
 ```
 
 # Формую зведену таблицю
@@ -274,14 +267,14 @@ print(unique(jobdata$indicator))
 rm(bounds, plott, temp_table, temp_table2)
 gc()
 
+
 #piwot table
-
-
 piw_tab <- jobdata %>%
   group_by(station_ID, coordinates, date, time, indicator) %>%
   summarise(
     mean_value = mean(value, na.rm = TRUE),
-    sum_error = sum(is_error, na.rm = TRUE)
+    sum_error = sum(is_error, na.rm = TRUE),
+    .groups = 'drop'
   ) %>%
   pivot_wider(
     names_from = indicator,
@@ -292,7 +285,7 @@ piw_tab <- jobdata %>%
 
 print(piw_tab)
 ```
-
+#Додаю в таблиці окремі поля: рік, місяць, день, день, тижня
 Для зручності аналізу додаю колонки з місяцями, днями, роками, днями тижня в основний датасет і в зведену таблицю
 
 ```{r}
@@ -308,8 +301,93 @@ piw_tab$year <- format(as.Date(piw_tab$date), "%Y")
 piw_tab$day_of_week <- format(as.Date(piw_tab$date), "%A")
 
 
+```
+#Візуалізація даних, пошук закономірнортей
+```{r}
+ggplot(piw_tab, aes(y = indicator_PM10)) + 
+  geom_boxplot() + 
+  theme_minimal() +
+  labs(title = "Boxplot для indicator_PM10", y = "Значення PM10", x = "")
 
-#bounds
+
+
+
+boxplot(piw_tab$indicator_Temperature ~ piw_tab$month,
+        main="Розподіл температури по місяцям",
+        xlab="Місяць",
+        ylab="Температура",
+        col="red",
+        border="black")
+```
+ввв
+
+
+```{r}
+filtered_data <- piw_tab %>% 
+  filter(sum_error == 0)
+
+boxplot(filtered_data$indicator_Temperature ~ filtered_data$month,
+        main="Розподіл температури по місяцям",
+        xlab="Місяць",
+        ylab="Температура",
+        col="red",
+        border="black")
+
+```
+```{r}
+
+ggplot(filtered_data, aes(x=indicator_Humidity, fill=month)) + 
+  geom_density(alpha=0.5) +
+  labs(title="Щільність розподілу вологості по місяцях", x="Вологість", y="Щільність")
 
 
 ```
+#
+
+```{r}
+ggplot(filtered_data, aes(x=indicator_CO2, y=indicator_CO)) + 
+  geom_point(aes(color=month), alpha=0.4) +
+  labs(title="Залежність температури від вологості", x="Вологість", y="Температура")
+```
+
+#
+```{r}
+avg_data <- filtered_data %>% 
+  group_by(date) %>% 
+  summarise(avg_humidity = mean(indicator_Humidity, na.rm=TRUE))
+
+ggplot(avg_data, aes(x=date, y=avg_humidity)) + 
+  geom_line(color="steelblue") +
+  labs(title="Середнє значення вологості за датою", x="Дата", y="Середня вологість")
+```
+
+#
+```{r}
+# Графік вологості
+p1 <- ggplot(avg_data, aes(x=date, y=avg_humidity)) + 
+  geom_line(color="blue") +
+  labs(y="Вологість") +
+  theme(axis.title.y=element_text(color="blue"))
+
+# Графік температури
+p2 <- ggplot(avg_data, aes(x=date, y=avg_temperature)) + 
+  geom_line(color="red") +
+  labs(y="Температура") +
+  theme(axis.title.y=element_text(color="red"), 
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+# Графік PM10
+p3 <- ggplot(avg_data, aes(x=date, y=avg_pm10)) + 
+  geom_line(color="green") +
+  labs(y="PM10") +
+  theme(axis.title.y=element_text(color="green"), 
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+
+combined_plot <- p1 + p2 + p3 + plot_layout(guides="collect")
+print(combined_plot)
+
+```
+
