@@ -8,7 +8,7 @@ library(lubridate)
 library(ggplot2)  
 
 
-setwd("/media/uarik/S2/Rstudio_projects/DataAir/") 
+setwd("/home/uarik/Documents/RProjects/DataAir") 
 getwd() #displays your working directory
 
 jobdata <- read_csv("ECOCITY_Archive_377_40_2019-02-20_2023-09-23.csv", col_names = FALSE)
@@ -27,7 +27,8 @@ colnames(jobdata)
 
 temp_table <- jobdata %>%
   group_by(indicator, unit) %>%
-  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+  summarise(n = round(mean(value), 3), max = round(max(value), 3), min = round(min(value), 3), sd = round(sd(value), 3), .groups = 'drop') %>%
+  ungroup()
 temp_table
 
 
@@ -45,7 +46,8 @@ jobdata <- jobdata %>%
 
 temp_table <- jobdata %>%
   group_by(indicator, unit) %>%
-  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2), .groups = 'drop') %>%
+  ungroup()
 
 temp_table
 ```
@@ -53,27 +55,279 @@ temp_table
 Наступна проблема - занадто великий діапазон показників. Очевидно, що температура повітря не могла бути в межах від мінус 189 до 420.
 
 в даному дослідженні буду видаляти з аналізу всі показник станцій, якщо хоча б один показник виявиться в аномальній зоні.
-
-Для цього формую зведену таблицю. Показники тепер будуть в колонках 
 ```{r}
 
 #спочатку потрібно переіменувати індикатори
 jobdata <- jobdata %>%
-  mutate(indicator = ifelse(indicator == 'CO₂', 'CO2', indicator)) %>%
-  mutate(indicator = ifelse(indicator == 'NH₃', 'NH3', indicator)) %>%
-  mutate(indicator = ifelse(indicator == 'NO₂', 'NO2', indicator)) %>%
-  mutate(indicator = ifelse(indicator == 'O₃', 'O3', indicator)) %>%
-  mutate(indicator = ifelse(indicator == 'SO₂', 'SO2', indicator)) 
+  mutate(indicator = ifelse(indicator == 'CO₂', 'co_two', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NH₃', 'nh_three', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'NO₂', 'no_tho', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'O₃', 'ozone', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'CO', 'co', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'PM1.0', 'pm_one', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'PM10', 'pm_ten', indicator)) %>%
+  mutate(indicator = ifelse(indicator == 'PM2.5', 'pm_two_five', indicator)) 
 
 
 temp_table <- jobdata %>%
   group_by(indicator, unit) %>%
-  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
+  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2), .groups = 'drop') %>%
+  ungroup()
 
 temp_table
 
 ```
-Тепер все виглядає готовим до зведеної
+Створюю ключ - наявність помилок
+```{r}
+jobdata$is_error <- 0L
+```
+Відсікаю екстремальні дані. для цього використаю статистичний метод - Міжквартильний розмах. 
+Метод базується на розподілі даних на квартилі. "Викидами" вважаються дані, які знаходяться за межами 1,5*IQR від першого або третього квартилю.
+Проілюструю на прикладі температури:
+```{r}
+bounds <- jobdata %>%
+  filter(indicator == "Temperature") %>%
+  summarise(Q1 = quantile(value, 0.25, na.rm = TRUE),
+            Q3 = quantile(value, 0.75, na.rm = TRUE)) %>%
+  mutate(IQR = Q3 - Q1,
+         lower_bound = Q1 - 1.5*IQR,
+         upper_bound = Q3 + 1.5*IQR)
+
+chart <- jobdata %>%
+  filter(indicator == "Temperature") %>%
+  ggplot(aes(x = value)) + 
+  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
+print(chart)
+
+
+```
+Червоними пунктирними лініями відмічені границі даних, які виріжуться з аналізу. В даному випадку це все, що нижче -21 градуса і вище 46. 
+Щоб не аналізувати кожен показник вручну - запускаю цикл, який пройде по всіх показниках, і побудує візуальні схеми "випидаючих" значень
+
+
+
+
+
+```{r}
+for (indicator_name in temp_table$indicator) {
+  # Отримання назви колонки
+  
+  bounds <- jobdata %>%
+    filter(indicator == indicator_name) %>%
+    summarise(Q1 = quantile(value, 0.25, na.rm = TRUE),
+              Q3 = quantile(value, 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+#           lower_bound =if_else((Q1 - 1.5*IQR) < 0 & indicator_name != "Temperature", 0, Q1 - 1.5*IQR),
+            lower_bound = Q1 - 1.5*IQR,
+           upper_bound = Q3 + 1.5*IQR)
+  
+  plott <- jobdata %>%
+    filter(indicator == indicator_name) %>%
+    filter(!is.na(value)) %>%
+    ggplot(aes(x = value)) + 
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = indicator_name,
+         subtitle = paste("Нижнє значення:", bounds$lower_bound, ", Верхнє:", bounds$upper_bound))
+  
+  print(plott)
+  
+}
+```
+Варто звернути увагу на показник Озону - тут досить щільний рівномірний розподіл, тому викидів тут не буде (майже, бо ще потрібно видалити від'ємні дані). В подальшому циклі, який позначатиме дефектні дані - Озон виключаю
+
+```{r}
+for (indicator_name in temp_table$indicator) {
+  # Отримання назви колонки
+  
+  bounds <- jobdata %>%
+    filter(indicator == indicator_name) %>%
+    summarise(Q1 = quantile(value, 0.25, na.rm = TRUE),
+              Q3 = quantile(value, 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+           lower_bound =if_else((Q1 - 1.5*IQR) < 0 & indicator_name != "Temperature", 0, Q1 - 1.5*IQR),
+           upper_bound = Q3 + 1.5*IQR)
+  
+  #мутація даних
+jobdata <- jobdata %>%
+  mutate(
+      is_error = if_else(
+        indicator == indicator_name & ((indicator == "O₃" &  value <  bounds$lower_bound) | (value <  bounds$lower_bound | value >  bounds$upper_bound)),
+        1L, 
+        0L  
+      )
+    )          
+    
+  
+  
+    
+  
+  #виведення нових графіків
+  
+  
+  plott <- jobdata %>%
+    filter(indicator == indicator_name) %>%
+    filter(!is.na(value)) %>%
+    filter(is_error == 0) %>%
+    ggplot(aes(x = value)) + 
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = indicator_name,
+         subtitle = paste("Нижнє значення:", bounds$lower_bound, ", Верхнє:", bounds$upper_bound))
+  
+  
+  print(plott)
+  
+}
+```
+
+
+#### спробувати функції
+
+###########
+# Function to filter data
+filter_data <- function(data, indicator) {
+  data %>% 
+    filter(indicator == indicator) %>%
+    filter(!is.na(value)) %>%
+    filter(is_error == 0)
+}
+
+# Function to create plot
+plot_indicator <- function(data, indicator, bounds) {
+  
+  data %>%
+    filter_data(indicator) %>% 
+    ggplot(aes(x = value)) +
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) +
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = indicator,
+         subtitle = paste("Lower bound:", bounds$lower_bound, ", Upper bound:", bounds$upper_bound))
+}
+
+
+# mutate and Plot each indicator  
+indicators <- unique(jobdata$indicator)
+
+lapply(indicators, function(x) {
+  
+  bounds <- jobdata %>%
+    filter(indicator == x) %>%
+    summarise(Q1 = quantile(value, 0.25, na.rm = TRUE),
+              Q3 = quantile(value, 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+           lower_bound = if_else((Q1 - 1.5*IQR) < 0 & x != "Temperature", 0, Q1 - 1.5*IQR),
+           upper_bound = Q3 + 1.5*IQR)
+  
+  
+jobdata <- jobdata %>%
+  mutate(
+      is_error = if_else(
+        indicator == indicator_name & ((indicator == "O₃" &  value <  bounds$lower_bound) | (value <  bounds$lower_bound | value >  bounds$upper_bound)),
+        1L, 
+        0L  
+      )
+    )   
+  
+  
+
+  plot_indicator(jobdata, x, bounds)
+  
+})
+
+###########
+
+```{r}
+#### спробувати функції
+
+
+
+# mutate and Plot each indicator  
+indicators <- unique(jobdata$indicator)
+
+lapply(indicators, function(x) {
+  
+  # Отримання назви колонки
+  
+  bounds <- jobdata %>%
+    filter(indicator == x) %>%
+    summarise(Q1 = quantile(value, 0.25, na.rm = TRUE),
+              Q3 = quantile(value, 0.75, na.rm = TRUE)) %>%
+    mutate(IQR = Q3 - Q1,
+           lower_bound =if_else((Q1 - 1.5*IQR) < 0 & x != "Temperature", 0, Q1 - 1.5*IQR),
+           upper_bound = Q3 + 1.5*IQR)
+  
+  #мутація даних
+jobdata <- jobdata %>%
+  mutate(
+      is_error = if_else(
+        indicator == x & ((indicator == "O₃" &  value <  bounds$lower_bound) | (value <  bounds$lower_bound | value >  bounds$upper_bound)),
+        1L, 
+        0L  
+      )
+    )          
+    
+  
+  
+    
+  
+  #виведення нових графіків
+  
+  
+  plott <- jobdata %>%
+    filter(indicator == x) %>%
+    filter(!is.na(value)) %>%
+    filter(is_error == 0) %>%
+    ggplot(aes(x = value)) + 
+    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
+    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
+    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
+    labs(title = indicator_name,
+         subtitle = paste("Нижнє значення:", bounds$lower_bound, ", Верхнє:", bounds$upper_bound))
+  
+  
+  print(plott)
+  
+
+  
+})
+```
+
+
+
+Тепер все виглядає готовим до зведеної. глянемо нові загальні дані. і порівняємо з даними до очистки
+
+```{r}
+
+print(temp_table)
+
+
+
+
+temp_table2 <- jobdata %>%
+  filter(is_error == 0)  %>%
+  filter(!is.na(value)) %>%
+  group_by(indicator, unit) %>%
+  summarise(avg = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2)) %>%
+  ungroup()
+
+print(temp_table2)
+
+```
+
+```{r}
+temp_table2 <- jobdata %>%
+  filter(indicator == "CO2")
+
+```
+
+
+
 ```{r}
 #piwot table
 
@@ -100,119 +354,11 @@ piw_tab$day <- format(as.Date(piw_tab$date), "%d")
 piw_tab$year <- format(as.Date(piw_tab$date), "%Y")
 piw_tab$day_of_week <- format(as.Date(piw_tab$date), "%A")
 
-```
-Створюємо ще два ключі. рахівник помилок і розміщення станції спостереження (в приміщенні чи назовні)
-```{r}
 
-piw_tab$error <- 0L
-piw_tab$station_location <- "outside"
-
-```
-Відсікаю екстремальні дані. для цього використаю статистичний метод - Міжквартильний розмах. 
-Метод базується на розподілі даних на квартилі. "Викидами" вважаються дані, які знаходяться за межами 1,5*IQR від першого або третього квартилю.
-Проілюструю на прикладі температури:
-```{r}
-bounds <- piw_tab %>%
-  summarise(Q1 = quantile(value.Temperature, 0.25, na.rm = TRUE),
-            Q3 = quantile(value.Temperature, 0.75, na.rm = TRUE)) %>%
-  mutate(IQR = Q3 - Q1,
-         lower_bound = Q1 - 1.5*IQR,
-         upper_bound = Q3 + 1.5*IQR)
-
-ggplot(piw_tab, aes(x = value.Temperature)) + 
-  geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-  geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-  geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed")
 
 #bounds
 
-```
-Червоними пунктирними лініями відмічені границі даних, які виріжуться з аналізу. В даному випадку це все, що нижче -21 градуса і вище 46. 
-Щоб не аналізувати кожен показник вручну - запускаю цикл, який пройде по всіх показниках, і побудує візуальні схеми "випидаючих" значень
-
-```{r}
-for (val in temp_table$indicator) {
-  # Отримання назви колонки
-  column_name <- paste0("value.", val)
-  
-  bounds <- piw_tab %>%
-    summarise(Q1 = quantile(.data[[column_name]], 0.25, na.rm = TRUE),
-              Q3 = quantile(.data[[column_name]], 0.75, na.rm = TRUE)) %>%
-    mutate(IQR = Q3 - Q1,
-           lower_bound = Q1 - 1.5*IQR,
-           upper_bound = Q3 + 1.5*IQR)
-  
-  plott <- piw_tab %>%
-    filter(!is.na(.data[[column_name]])) %>%
-    ggplot(aes(x = .data[[column_name]])) + 
-    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
-    labs(title = val, y = column_name)
-  
-  print(plott)
-  
-}
-```
-Варто звернути увагу на показник Озону - тут досить щільний рівномірний розподіл, тому викидів тут не буде (майже, ще потрібно видалити від'ємні дані). В подальшому циклі, який позначатиме дефектні дані - Озон виключаю
-
-```{r}
-
-for (val in temp_table$indicator) {
-  # Отримання назви колонки
-  column_name <- paste0("value.", val)
-  
-  #визначення границь відсікання даних
-  bounds <- piw_tab %>%
-    summarise(Q1 = quantile(.data[[column_name]], 0.25, na.rm = TRUE),
-              Q3 = quantile(.data[[column_name]], 0.75, na.rm = TRUE)) %>%
-    mutate(IQR = Q3 - Q1,
-           lower_bound = Q1 - 1.5*IQR,
-           upper_bound = Q3 + 1.5*IQR)
-  
-  #мутація даних
-piw_tab <- piw_tab %>%
-    mutate(
-      error = ifelse(
-        (val != "O3" & ( .data[[column_name]] <  bounds$lower_bound | .data[[column_name]] >  bounds$upper_bound)) | 
-        (val != "Temperature" & .data[[column_name]]) <  0,
-        1L, 
-        0L  # Це явно вказує, що якщо умова не виконується, то потрібно повернути поточне значення 'error'
-      )
-    )
-  
-  #виведення нових графіків
-  plott <- piw_tab %>%
-    filter(!is.na(.data[[column_name]])) %>%
-    filter(error == 0) %>%
-    ggplot(aes(x = .data[[column_name]])) + 
-    geom_histogram(binwidth = 1, fill = "blue", alpha = 0.5) + 
-    geom_vline(aes(xintercept = bounds$lower_bound), color = "red", linetype = "dashed") + 
-    geom_vline(aes(xintercept = bounds$upper_bound), color = "red", linetype = "dashed") +
-    labs(title = val)
-  
-  print(plott)
-  
-}
-
 
 ```
-Тепер розподіл красивий. глянемо нові загальні дані. і порівняємо з даними до очистки
-```{r}
-
-temp_table <- jobdata %>%
-  group_by(indicator, unit) %>%
-  summarise(n = round(mean(value), 2), max = round(max(value), 2), min = round(min(value), 2), sd = round(sd(value), 2))
-print(temp_table)
-
-
-print(temp_table)
-```
-
-```{r}
-####
-
-```
-
 
 
