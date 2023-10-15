@@ -347,7 +347,7 @@ ggplot(filtered_data, aes(x=indicator_Humidity, fill=month)) +
 ```{r}
 ggplot(filtered_data, aes(x=indicator_CO2, y=indicator_CO)) + 
   geom_point(aes(color=month), alpha=0.4) +
-  labs(title="Залежність температури від вологості", x="Вологість", y="Температура")
+  labs(title="Залежність CO i CO2", x="CO2", y="CO") #+ facet_wrap( ~ month)
 ```
 
 #
@@ -363,31 +363,39 @@ ggplot(avg_data, aes(x=date, y=avg_humidity)) +
 
 #
 ```{r}
-# Графік вологості
-p1 <- ggplot(avg_data, aes(x=date, y=avg_humidity)) + 
-  geom_line(color="blue") +
-  labs(y="Вологість") +
-  theme(axis.title.y=element_text(color="blue"))
+boxplot(filtered_data$indicator_PM2_5 ~ filtered_data$time,
+        main="Розподіл забрудненості по часу доби",
+        xlab="Час",
+        ylab="Пил",
+        col="red",
+        border="black")
 
-# Графік температури
-p2 <- ggplot(avg_data, aes(x=date, y=avg_temperature)) + 
-  geom_line(color="red") +
-  labs(y="Температура") +
-  theme(axis.title.y=element_text(color="red"), 
-        axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())
+```
 
-# Графік PM10
-p3 <- ggplot(avg_data, aes(x=date, y=avg_pm10)) + 
-  geom_line(color="green") +
-  labs(y="PM10") +
-  theme(axis.title.y=element_text(color="green"), 
-        axis.text.y=element_blank(),
-        axis.ticks.y=element_blank())
+```{r}
+avg_data <- filtered_data %>% 
+  group_by(year, month) %>% 
+  summarise(avg_PM2_5 = mean(indicator_PM2_5, na.rm=TRUE)) %>% 
+  ungroup()
 
+year_breaks <- c(10, 22, 34, 46)
 
-combined_plot <- p1 + p2 + p3 + plot_layout(guides="collect")
-print(combined_plot)
+ggplot(avg_data, aes(x=interaction(year, month), y=avg_PM2_5, group=1)) + 
+  geom_line(aes(color=year)) +
+  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил") +
+  geom_vline(xintercept = year_breaks, linetype="dashed", color = "red", size=1) 
+```
+```{r}
+avg_data <- filtered_data %>% 
+  group_by (year, month = floor_date(date, 'month')) %>%
+  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE)) %>% 
+  ungroup()
 
+#year_breaks <- c(10, 22, 34, 46)
+
+ggplot(avg_data, aes(x=month, y=mean)) + 
+  geom_line(color=year) +
+  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил") 
+#  geom_vline(xintercept = year_breaks, linetype="dashed", color = "red", size=1) 
 ```
 
