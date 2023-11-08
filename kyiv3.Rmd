@@ -467,38 +467,47 @@ write.csv(temp_table, "temp_table.csv")
 ```{r}
 #кластеризація PM2.5
 
-claster_table <- jobdata %>%
+df <- jobdata %>%
   filter(is_error == 0)  %>%
   filter(indicator == "PM2_5")  %>%
   separate(coordinates, into = c("lat", "lon"), sep = " ") %>%
   mutate(
     lat = as.numeric(lat),
     lon = as.numeric(lon)
-  )# %>%
- # filter(latitude != 0 & longitude != 0)
+  ) %>%
+  select(date, value, lat, lon) %>%
+  filter(lat != 0 & lon != 0)
   
 
-claster_table
+df
 
-
-# Припускаючи, що у нас є dataframe df з колонками lon, lat і air_quality
+# Припускаючи, що у нас є dataframe df з колонками lon, lat і value
 set.seed(123) # це забезпечує відтворюваність результатів
-k <- 7 # Кількість кластерів. Це "K" у K-means.
+k <- 9 # Кількість кластерів, можеш вибрати на свій розсуд
+clusters <- kmeans(df[, c("lon", "lat")], centers = k)
+df$cluster <- as.factor(clusters$cluster)
 
-# Проводимо кластеризацію
-clusters <- kmeans(claster_table[, c("lon", "lat")], centers = k)
-claster_table$cluster <- as.factor(clusters$cluster) # Додаємо інформацію про кластери до наших даних
-
-# Розраховуємо середні значення якості повітря для кожного кластера
-average_quality <- claster_table %>%
+# Тепер можеш розрахувати середні значення якості повітря по кластерам
+average_quality <- df %>%
   group_by(cluster) %>%
   summarize(avg_quality = mean(value, na.rm = TRUE))
 
-# Візуалізація результатів
+# Розрахунок середніх координат для кожного кластера
+cluster_coords <- df %>%
+  group_by(cluster) %>%
+  summarize(avg_lat = mean(lat),
+            avg_lon = mean(lon))
+
+# Додавання координат до датафрейму average_quality
+average_quality <- left_join(average_quality, cluster_coords, by = "cluster")
+
+ggplot(df, aes(x = lon, y = lat, color = cluster)) +
+  geom_point() +
+  geom_point(data = average_quality, aes(x = avg_lon, y = avg_lat, size = avg_quality), shape = 15)
 
 
-
-
+install.packages("sf")
+library(sf)
 
 
 
