@@ -388,14 +388,120 @@ ggplot(avg_data, aes(x=interaction(year, month), y=avg_PM2_5, group=1)) +
 ```{r}
 avg_data <- filtered_data %>% 
   group_by (year, month = floor_date(date, 'month')) %>%
-  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE)) %>% 
+  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE), .groups = 'drop') %>% 
   ungroup()
 
 #year_breaks <- c(10, 22, 34, 46)
 
 ggplot(avg_data, aes(x=month, y=mean)) + 
-  geom_line(color=year) +
-  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил") 
+  geom_line() +
+  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил") +
+  geom_smooth(method="lm", formula=y ~ poly(x, 12))
 #  geom_vline(xintercept = year_breaks, linetype="dashed", color = "red", size=1) 
+```
+
+
+```{r}
+avg_data <- filtered_data %>% 
+  group_by (year, month = floor_date(date, 'month')) %>%
+  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE), .groups = 'drop') %>% 
+  ungroup()
+
+#year_breaks <- c(10, 22, 34, 46)
+
+ggplot(avg_data, aes(x=month, y=mean)) + 
+  geom_line(aes(color=as.factor(year))) +
+  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил") +
+  geom_smooth(method="lm", formula=y ~ poly(x, 12))
+```
+
+
+```{r}
+avg_data <- filtered_data %>% 
+  group_by (year, month) %>%
+  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE), .groups = 'drop') %>% 
+  ungroup()
+
+#year_breaks <- c(10, 22, 34, 46)
+
+ggplot(avg_data, aes(x=month, y=mean, group=year, color=as.factor(year))) + 
+  geom_line() +
+  labs(title="Середнє значення пилу за місяцем", x="Місяць", y="Пил", color="Рік") 
+```
+
+
+```{r}
+avg_data <- piw_tab %>% 
+  filter(indicator_PM2_5 > 250) %>% 
+  
+  group_by (year, month = floor_date(date, 'month')) %>%
+#  summarise(mean = mean(indicator_PM2_5, na.rm=TRUE), .groups = 'drop')  
+  summarise(mean = n(), .groups = 'drop') 
+
+#year_breaks <- c(10, 22, 34, 46)
+
+ggplot(avg_data, aes(x=month, y=mean, color=as.factor(year))) + 
+  geom_line() +
+  labs(title="Середнє значення пилу за місяцем", x="Дата", y="Пил")
+#  labs(title="Середнє значення пилу за місяцем", x="Місяць", y="Пил") 
+```
+```{r}
+temp_table <- jobdata %>%
+  filter(is_error == 0)  %>%
+  filter(indicator == "PM2_5")  %>%
+  group_by(station_ID, coordinates, month = floor_date(date, 'month')) %>%
+  summarise(mean = round(mean(value), 4), .groups = 'drop') %>% 
+  separate(coordinates, into = c("latitude", "longitude"), sep = " ") %>%
+  mutate(
+    latitude = as.numeric(latitude),
+    longitude = as.numeric(longitude)
+  )# %>%
+ # filter(latitude != 0 & longitude != 0)
+  
+
+temp_table
+
+write.csv(temp_table, "temp_table.csv")
+```
+
+```{r}
+#кластеризація PM2.5
+
+claster_table <- jobdata %>%
+  filter(is_error == 0)  %>%
+  filter(indicator == "PM2_5")  %>%
+  separate(coordinates, into = c("lat", "lon"), sep = " ") %>%
+  mutate(
+    lat = as.numeric(lat),
+    lon = as.numeric(lon)
+  )# %>%
+ # filter(latitude != 0 & longitude != 0)
+  
+
+claster_table
+
+
+# Припускаючи, що у нас є dataframe df з колонками lon, lat і air_quality
+set.seed(123) # це забезпечує відтворюваність результатів
+k <- 7 # Кількість кластерів. Це "K" у K-means.
+
+# Проводимо кластеризацію
+clusters <- kmeans(claster_table[, c("lon", "lat")], centers = k)
+claster_table$cluster <- as.factor(clusters$cluster) # Додаємо інформацію про кластери до наших даних
+
+# Розраховуємо середні значення якості повітря для кожного кластера
+average_quality <- claster_table %>%
+  group_by(cluster) %>%
+  summarize(avg_quality = mean(value, na.rm = TRUE))
+
+# Візуалізація результатів
+
+
+
+
+
+
+
+
 ```
 
